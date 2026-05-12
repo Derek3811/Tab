@@ -451,63 +451,87 @@ function doPdf() {
   const tabsToPrint = activeTabs;
   if (tabsToPrint.length === 0) return;
 
-  const data = {
-    tabs: tabsToPrint,
-    type: tabTypeSelect.value,
-    mode: printModeSelect.value,
-    startPos: parseInt(startPosInput.value) || 1,
-    offsetX: parseFloat(offsetXInput.value) || 0,
-    offsetY: parseFloat(offsetYInput.value) || 0,
-    paperSize: paperSizeSelect.value,
-    debug: debugOverlayToggle.checked,
-    rotatePage: rotatePageToggle.checked,
-    rotateText: rotateTextToggle.checked
-  };
+  const type = tabTypeSelect.value;
+  const mode = printModeSelect.value;
+  const startPos = parseInt(startPosInput.value) || 1;
+  const offsetX = parseFloat(offsetXInput.value) || 0;
+  const offsetY = parseFloat(offsetYInput.value) || 0;
+  const paperSize = paperSizeSelect.value;
+  const rotateText = rotateTextToggle.checked;
 
-  renderPrintJob(data);
+  const tabCount = parseInt(type);
+  const pageWidthInches = paperSize === '9x11' ? 9 : 8.5;
+  const pageHeightInches = 11;
+  const tabHeightInches = pageHeightInches / tabCount;
 
-  const format = data.paperSize === '9x11' ? [9, 11] : 'letter';
-  const opt = {
-    margin:       0,
-    filename:     'Custom_Tabs.pdf',
-    image:        { type: 'jpeg', quality: 1 },
-    html2canvas:  { scale: 4, useCORS: true },
-    jsPDF:        { unit: 'in', format: format, orientation: 'portrait' },
-    pagebreak:    { mode: ['css', 'legacy'] }
-  };
+  // Build pages logic (same as print)
+  let pages = [];
+  if (mode === 'single') {
+    let currentPos = parseInt(startPos) - 1;
+    for (let i = 0; i < tabsToPrint.length; i++) {
+      let posIndex = currentPos % tabCount;
+      pages.push([{ text: tabsToPrint[i], posIndex, globalIndex: i }]);
+      currentPos++;
+    }
+  } else {
+    let currentPos = parseInt(startPos) - 1;
+    let currentPage = [];
+    for (let i = 0; i < tabsToPrint.length; i++) {
+      let posIndex = currentPos % tabCount;
+      currentPage.push({ text: tabsToPrint[i], posIndex, globalIndex: i });
+      currentPos++;
+      if (currentPos % tabCount === 0 || i === tabsToPrint.length - 1) {
+        pages.push(currentPage);
+        currentPage = [];
+        if (currentPos % tabCount === 0) currentPos = 0;
+      }
+    }
+  }
 
-  // Temporarily show the print target for html2pdf
-  printTarget.style.display = 'block';
-  printTarget.style.position = 'absolute';
-  printTarget.style.top = '-9999px';
-  printTarget.style.left = '-9999px';
-  
-  // Set explicit width to match paper size in pixels
-  const w = data.paperSize === '9x11' ? 9 : 8.5;
-  printTarget.style.width = `${w}in`;
-
-  pdfBtn.textContent = '⏳ Generating...';
-  pdfBtn.disabled = true;
-
-  html2pdf().set(opt).from(printTarget).save().then(() => {
-    printTarget.style.display = '';
-    printTarget.style.position = '';
-    printTarget.style.top = '';
-    printTarget.style.left = '';
-    printTarget.style.width = '';
-    pdfBtn.textContent = '📄 PDF';
-    pdfBtn.disabled = false;
-  }).catch(err => {
-    console.error(err);
-    alert('Error generating PDF');
-    printTarget.style.display = '';
-    printTarget.style.position = '';
-    printTarget.style.top = '';
-    printTarget.style.left = '';
-    printTarget.style.width = '';
-    pdfBtn.textContent = '📄 PDF';
-    pdfBtn.disabled = false;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'in',
+    format: [pageWidthInches, pageHeightInches]
   });
+
+  const xOffsetIn = offsetX / 25.4;
+  const yOffsetIn = offsetY / 25.4;
+
+  pages.forEach((pageTabs, pageIndex) => {
+    if (pageIndex > 0) doc.addPage();
+    
+    pageTabs.forEach(t => {
+      // Calculate center of the tab
+      // The tab is typically 0.5in wide, situated at the far right.
+      // So its center is pageWidth - 0.25in
+      const tabXCenter = pageWidthInches - 0.25 + xOffsetIn;
+      const tabYCenter = (t.posIndex * tabHeightInches) + (tabHeightInches / 2) + yOffsetIn;
+
+      const fontSizePt = parseFloat(tabFontSizes[t.globalIndex]) || 12;
+      doc.setFontSize(fontSizePt);
+      doc.setFont("helvetica", "normal");
+
+      // CSS padding limits the height available for text. 
+      // Top padding 4mm, bottom padding 2mm = 6mm total padding ~ 0.236 inches.
+      const maxLineWidth = tabHeightInches - (6 / 25.4);
+      
+      // Auto-wrap the text exactly like CSS
+      const textLines = doc.splitTextToSize(t.text, maxLineWidth);
+      
+      // Rotate 90 degrees counter-clockwise normally. If rotateText is checked, rotate clockwise (angle -90 + 180 = 90)
+      // Note: jsPDF angle rotates counter-clockwise.
+      const angle = rotateText ? 90 : -90; 
+
+      doc.text(textLines, tabXCenter, tabYCenter, {
+        align: 'center',
+        baseline: 'middle',
+        angle: angle
+      });
+    });
+  });
+
+  doc.save('Custom_Tabs.pdf');
 }
 
 function renderPrintJob(data) {
