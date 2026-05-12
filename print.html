@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { margin: 0; size: letter portrait; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .page {
+      width: 8.5in;
+      height: 11in;
+      position: relative;
+      page-break-after: always;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    
+    .tab {
+      position: absolute;
+      right: 0;
+      width: 0.5in; /* Tab width */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-weight: bold;
+      box-sizing: border-box;
+    }
+
+    .tab-text {
+      writing-mode: vertical-rl;
+      white-space: pre-wrap;
+      text-align: center;
+      line-height: 1.1;
+    }
+    
+    .tab-text.rotated {
+      transform: rotate(180deg);
+    }
+
+    .page-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    .page-container.rotated {
+      transform: rotate(180deg);
+      transform-origin: center center;
+    }
+
+    /* Debug Mode Styles */
+    .debug-mode .tab {
+      border: 1px dashed red;
+      background-color: rgba(255, 0, 0, 0.1);
+    }
+    
+    .debug-mode .page::before {
+      content: '';
+      position: absolute;
+      left: 50%; top: 0; bottom: 0;
+      border-left: 1px dashed rgba(0,0,255,0.3);
+      z-index: 999;
+    }
+    
+    .debug-mode .page::after {
+      content: '';
+      position: absolute;
+      top: 50%; left: 0; right: 0;
+      border-top: 1px dashed rgba(0,0,255,0.3);
+      z-index: 999;
+    }
+
+    .debug-number {
+      position: absolute;
+      left: -15px;
+      top: 5px;
+      font-size: 10px;
+      color: red;
+      transform: rotate(180deg); /* Counteract parent rotation for readability if needed, but rotated-container makes it 180 */
+    }
+  </style>
+</head>
+<body>
+  <div id="print-container"></div>
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    ipcRenderer.on('render-print-job', (event, data) => {
+      const container = document.getElementById('print-container');
+      container.innerHTML = '';
+
+      const { tabs, type, mode, startPos, offsetX, offsetY, debug, rotatePage, rotateText, paperSize } = data;
+      const tabCount = parseInt(type);
+      
+      if (debug) {
+        container.classList.add('debug-mode');
+      } else {
+        container.classList.remove('debug-mode');
+      }
+
+      const pageHeightInches = 11;
+      const pageWidthInches = paperSize === '9x11' ? 9 : 8.5;
+      const tabHeightInches = pageHeightInches / tabCount;
+
+      let pages = [];
+      
+      if (mode === 'single') {
+        let currentPos = parseInt(startPos) - 1;
+        for (let i = 0; i < tabs.length; i++) {
+          let posIndex = currentPos % tabCount;
+          pages.push([{ text: tabs[i], posIndex }]);
+          currentPos++;
+        }
+      } else {
+        let currentPos = parseInt(startPos) - 1;
+        let currentPage = [];
+        for (let i = 0; i < tabs.length; i++) {
+          let posIndex = currentPos % tabCount;
+          currentPage.push({ text: tabs[i], posIndex });
+          currentPos++;
+          
+          if (currentPos % tabCount === 0 || i === tabs.length - 1) {
+            pages.push(currentPage);
+            currentPage = [];
+            if (currentPos % tabCount === 0) currentPos = 0;
+          }
+        }
+      }
+
+      pages.forEach(pageTabs => {
+        const pageDiv = document.createElement('div');
+        pageDiv.className = 'page';
+        pageDiv.style.width = `${pageWidthInches}in`;
+        
+        const pageContainer = document.createElement('div');
+        pageContainer.className = 'page-container';
+        if (rotatePage) {
+          pageContainer.classList.add('rotated');
+        }
+        
+        pageTabs.forEach(t => {
+          const tabDiv = document.createElement('div');
+          tabDiv.className = 'tab';
+          
+          tabDiv.style.height = `${tabHeightInches}in`;
+          tabDiv.style.top = `${t.posIndex * tabHeightInches}in`;
+          
+          // Apply offsets (using mm for precise calibration)
+          const offX = parseFloat(offsetX) || 0;
+          const offY = parseFloat(offsetY) || 0;
+          tabDiv.style.marginRight = `${offX}mm`;
+          tabDiv.style.marginTop = `${offY}mm`;
+
+          const textDiv = document.createElement('div');
+          textDiv.className = 'tab-text';
+          if (rotateText) {
+            textDiv.classList.add('rotated');
+          }
+          
+          let fontSize = '16px';
+          let text = t.text;
+          
+          if (tabCount === 25) {
+             fontSize = '12px';
+          } else {
+             if (text.length > 15) fontSize = '14px';
+             if (text.length > 25) fontSize = '12px';
+          }
+          
+          textDiv.style.fontSize = fontSize;
+          textDiv.textContent = text;
+          
+          tabDiv.appendChild(textDiv);
+          
+          if (debug) {
+            const debugNum = document.createElement('div');
+            debugNum.className = 'debug-number';
+            debugNum.textContent = t.posIndex + 1;
+            tabDiv.appendChild(debugNum);
+          }
+          
+          pageContainer.appendChild(tabDiv);
+        });
+
+        pageDiv.appendChild(pageContainer);
+        container.appendChild(pageDiv);
+      });
+
+      // Notify main process we are ready
+      setTimeout(() => {
+        ipcRenderer.send('print-job-rendered');
+      }, 500);
+    });
+  </script>
+</body>
+</html>

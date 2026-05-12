@@ -1,0 +1,12 @@
+{
+  "name": "custom-tabs-printer",
+  "version": "1.0.0",
+  "description": "Desktop application for printing tab dividers",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^29.1.0"
+  }
+}
