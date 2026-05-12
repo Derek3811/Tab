@@ -22,16 +22,14 @@ const controlsPanel = document.querySelector('.controls-panel');
 
 const previewContainer = document.getElementById('preview-container');
 const previewStatus = document.getElementById('preview-status');
-const printBtn = document.getElementById('print-btn');
-const testPrintBtn = document.getElementById('test-print-btn');
-
-const printSummaryContainer = document.getElementById('print-summary');
+const printSummary = document.getElementById('print-summary');
 const summaryDetails = document.getElementById('summary-details');
+const printBtn = document.getElementById('print-btn');
+const pdfBtn = document.getElementById('pdf-btn');
+const printTarget = document.getElementById('print-target');
 
 const optionsHeader = document.getElementById('options-header');
 const optionsContent = document.getElementById('options-content');
-
-const printTarget = document.getElementById('print-target');
 
 // State
 let isDragging = false;
@@ -67,7 +65,8 @@ function init() {
   debugOverlayToggle.addEventListener('change', updatePreview);
 
   printBtn.addEventListener('click', () => doPrint(false));
-  testPrintBtn.addEventListener('click', () => doPrint(true));
+  pdfBtn.addEventListener('click', doPdf);
+  document.getElementById('test-print-btn').addEventListener('click', () => doPrint(true));
 
 
   fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
@@ -283,9 +282,9 @@ function updatePreview() {
   if (activeTabs.length === 0) {
     previewContainer.innerHTML = '<div class="empty-state">Drop files here, click to upload, or switch to Numeric Mode to start</div>';
     previewStatus.textContent = '0 items';
-    printSummaryContainer.style.display = 'none';
+    printSummary.style.display = 'none';
     printBtn.disabled = true;
-    printBtn.textContent = `🖨️ Print`;
+    pdfBtn.disabled = true;
     return;
   }
 
@@ -312,7 +311,7 @@ function updatePreview() {
     totalPages = pages;
   }
 
-  printSummaryContainer.style.display = 'block';
+  printSummary.style.display = 'block';
   summaryDetails.innerHTML = `
     <strong>First Item:</strong> ${activeTabs[0].replace(/\n/g, ' ')}<br>
     <strong>Start Position:</strong> ${startPos}<br>
@@ -323,6 +322,7 @@ function updatePreview() {
   const modeText = mode === 'single' ? 'Single Tab' : 'Full Page';
   printBtn.textContent = `Print ${activeTabs.length} tabs → ${totalPages} pages (${modeText})`;
   printBtn.disabled = false;
+  pdfBtn.disabled = false;
 
   previewContainer.innerHTML = '';
   const grid = document.createElement('div');
@@ -445,6 +445,69 @@ function doPrint(isTest) {
   setTimeout(() => {
     window.print();
   }, 500);
+}
+
+function doPdf() {
+  const tabsToPrint = activeTabs;
+  if (tabsToPrint.length === 0) return;
+
+  const data = {
+    tabs: tabsToPrint,
+    type: tabTypeSelect.value,
+    mode: printModeSelect.value,
+    startPos: parseInt(startPosInput.value) || 1,
+    offsetX: parseFloat(offsetXInput.value) || 0,
+    offsetY: parseFloat(offsetYInput.value) || 0,
+    paperSize: paperSizeSelect.value,
+    debug: debugOverlayToggle.checked,
+    rotatePage: rotatePageToggle.checked,
+    rotateText: rotateTextToggle.checked
+  };
+
+  renderPrintJob(data);
+
+  const format = data.paperSize === '9x11' ? [9, 11] : 'letter';
+  const opt = {
+    margin:       0,
+    filename:     'Custom_Tabs.pdf',
+    image:        { type: 'jpeg', quality: 1 },
+    html2canvas:  { scale: 4, useCORS: true },
+    jsPDF:        { unit: 'in', format: format, orientation: 'portrait' },
+    pagebreak:    { mode: ['css', 'legacy'] }
+  };
+
+  // Temporarily show the print target for html2pdf
+  printTarget.style.display = 'block';
+  printTarget.style.position = 'absolute';
+  printTarget.style.top = '-9999px';
+  printTarget.style.left = '-9999px';
+  
+  // Set explicit width to match paper size in pixels
+  const w = data.paperSize === '9x11' ? 9 : 8.5;
+  printTarget.style.width = `${w}in`;
+
+  pdfBtn.textContent = '⏳ Generating...';
+  pdfBtn.disabled = true;
+
+  html2pdf().set(opt).from(printTarget).save().then(() => {
+    printTarget.style.display = '';
+    printTarget.style.position = '';
+    printTarget.style.top = '';
+    printTarget.style.left = '';
+    printTarget.style.width = '';
+    pdfBtn.textContent = '📄 PDF';
+    pdfBtn.disabled = false;
+  }).catch(err => {
+    console.error(err);
+    alert('Error generating PDF');
+    printTarget.style.display = '';
+    printTarget.style.position = '';
+    printTarget.style.top = '';
+    printTarget.style.left = '';
+    printTarget.style.width = '';
+    pdfBtn.textContent = '📄 PDF';
+    pdfBtn.disabled = false;
+  });
 }
 
 function renderPrintJob(data) {

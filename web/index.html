@@ -6,6 +6,7 @@
   <title>Custom Tabs Printer | Web</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
   <div class="app-container no-print">
@@ -149,9 +150,14 @@
           <div class="print-summary" id="print-summary" style="display: none;">
             <div id="summary-details"></div>
           </div>
-          <button class="btn btn-large" id="print-btn" disabled>
-            🖨️ Print
-          </button>
+          <div style="display: flex; gap: 12px;">
+            <button class="btn btn-large" id="pdf-btn" disabled style="background-color: #475569; border-color: #334155;">
+              📄 PDF
+            </button>
+            <button class="btn btn-large" id="print-btn" disabled>
+              🖨️ Print
+            </button>
+          </div>
         </div>
       </div>
       
