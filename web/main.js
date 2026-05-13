@@ -161,8 +161,8 @@ function applyBatchFontSizes() {
     if (text.includes('\n')) {
       lines = text.split('\n').length;
     } else {
-      if (text.length > 45) lines = 3;
-      else if (text.length > 22) lines = 2;
+      if (text.length > 50) lines = 3;
+      else if (text.length > 25) lines = 2;
     }
 
     if (is25Cut) {
@@ -355,11 +355,11 @@ function balanceTextLines(text) {
   
   const totalChars = words.join(' ').length;
   
-  if (totalChars <= 22) {
+  if (totalChars <= 25) {
     return words.join(' ');
   }
   
-  if (totalChars <= 42 || words.length === 2) {
+  if (totalChars <= 50 || words.length === 2) {
     let bestSplit = 1;
     let minDiff = Infinity;
     for (let i = 1; i < words.length; i++) {
@@ -370,7 +370,7 @@ function balanceTextLines(text) {
       let diff = Math.abs(line1.length - targetL1);
       
       // Penalty to avoid creating a line so long it wraps naturally
-      if (line1.length > 24 || line2.length > 24) diff += 100;
+      if (line1.length > 30 || line2.length > 30) diff += 100;
 
       if (diff < minDiff) {
         minDiff = diff;
@@ -400,7 +400,7 @@ function balanceTextLines(text) {
                  Math.abs(line3.length - targetL3);
                  
       // Penalty to avoid creating a line so long it wraps naturally
-      if (line1.length > 30 || line2.length > 30 || line3.length > 30) diff += 100;
+      if (line1.length > 35 || line2.length > 35 || line3.length > 35) diff += 100;
                  
       if (diff < minDiff) {
         minDiff = diff;
@@ -676,24 +676,32 @@ function doPdf() {
     
     pageTabs.forEach(t => {
       // Calculate center of the tab
-      // The tab is typically 0.5in wide, situated at the far right.
-      // So its center is pageWidth - 0.25in
-      const tabXCenter = pageWidthInches - 0.25 + xOffsetIn;
+      // The tab is typically 0.5in wide, situated at the far right (from 8.5" to 9.0").
+      // The CSS uses right:0 and margin-right to move inward (left).
+      // So pageWidth - 0.25 moves to center of extension, then MINUS xOffsetIn moves it further left.
+      const tabXCenter = pageWidthInches - 0.25 - xOffsetIn;
       const tabYCenter = (t.posIndex * tabHeightInches) + (tabHeightInches / 2) + yOffsetIn;
 
       const fontSizePt = parseFloat(tabFontSizes[t.globalIndex]) || 12;
       doc.setFontSize(fontSizePt);
-      doc.setFont("helvetica", "normal");
+      doc.setFont("helvetica", "bold"); // Match bold weight from preview
+      doc.setLineHeightFactor(1.1);
 
-      // CSS padding limits the height available for text. 
-      // Top padding 4mm, bottom padding 2mm = 6mm total padding ~ 0.236 inches.
-      const maxLineWidth = tabHeightInches - (6 / 25.4);
+      // Increase safety padding to avoid printer cut-off at top/bottom of tab extension
+      const verticalPadding = Math.max(0.15, tabHeightInches * 0.1); 
+      const maxLineWidth = tabHeightInches - (verticalPadding * 2);
       
-      // Auto-wrap the text exactly like CSS
-      const textLines = doc.splitTextToSize(t.text, maxLineWidth);
+      // Auto-wrap the text. splitTextToSize uses the current font/size.
+      let textLines = doc.splitTextToSize(t.text, maxLineWidth);
       
-      // Rotate 90 degrees counter-clockwise normally. If rotateText is checked, rotate clockwise (angle -90 + 180 = 90)
-      // Note: jsPDF angle rotates counter-clockwise.
+      // In -90 degree rotation, lines grow to the right. 
+      // To simulate 'vertical-rl' (right-to-left), we reverse the lines 
+      // so the first line is rendered at the rightmost position of the block.
+      if (Array.isArray(textLines) && textLines.length > 1) {
+        textLines.reverse();
+      }
+      
+      // Rotate 90 degrees counter-clockwise normally (-90). 
       const angle = rotateText ? 90 : -90; 
 
       doc.text(textLines, tabXCenter, tabYCenter, {
