@@ -627,6 +627,7 @@ function doPdf() {
   const paperSize = '9x11';
   const collation = collationModeSelect.value;
   const rotateText = rotateTextToggle.checked;
+  const rotatePage = rotatePageToggle.checked;
 
   const tabCount = parseInt(type);
   const pageWidthInches = paperSize === '9x11' ? 9 : 8.5;
@@ -675,39 +676,53 @@ function doPdf() {
     if (pageIndex > 0) doc.addPage();
     
     pageTabs.forEach(t => {
-      // Calculate center of the tab
-      // The tab is typically 0.5in wide, situated at the far right (from 8.5" to 9.0").
-      // The CSS uses right:0 and margin-right to move inward (left).
-      // So pageWidth - 0.25 moves to center of extension, then MINUS xOffsetIn moves it further left.
-      const tabXCenter = pageWidthInches - 0.25 - xOffsetIn;
-      const tabYCenter = (t.posIndex * tabHeightInches) + (tabHeightInches / 2) + yOffsetIn;
+      // Base positions for a standard portrait page
+      let finalX = pageWidthInches - 0.25 - xOffsetIn;
+      let finalY = (t.posIndex * tabHeightInches) + (tabHeightInches / 2) + yOffsetIn;
+      let finalAngle = rotateText ? 90 : -90;
+
+      // If Rotate Page is enabled, flip the coordinates and the text orientation
+      if (rotatePage) {
+        finalX = pageWidthInches - finalX;
+        finalY = pageHeightInches - finalY;
+        finalAngle += 180;
+      }
 
       const fontSizePt = parseFloat(tabFontSizes[t.globalIndex]) || 12;
       doc.setFontSize(fontSizePt);
-      doc.setFont("helvetica", "bold"); // Match bold weight from preview
+      doc.setFont("helvetica", "bold");
       doc.setLineHeightFactor(1.1);
 
-      // Increase safety padding to avoid printer cut-off at top/bottom of tab extension
       const verticalPadding = Math.max(0.15, tabHeightInches * 0.1); 
       const maxLineWidth = tabHeightInches - (verticalPadding * 2);
       
-      // Auto-wrap the text. splitTextToSize uses the current font/size.
       let textLines = doc.splitTextToSize(t.text, maxLineWidth);
-      
-      // In -90 degree rotation, lines grow to the right. 
-      // To simulate 'vertical-rl' (right-to-left), we reverse the lines 
-      // so the first line is rendered at the rightmost position of the block.
-      if (Array.isArray(textLines) && textLines.length > 1) {
-        textLines.reverse();
-      }
-      
-      // Rotate 90 degrees counter-clockwise normally (-90). 
-      const angle = rotateText ? 90 : -90; 
+      if (!Array.isArray(textLines)) textLines = [textLines];
 
-      doc.text(textLines, tabXCenter, tabYCenter, {
-        align: 'center',
-        baseline: 'middle',
-        angle: angle
+      // Manual multi-line rendering for exact alignment
+      const lineHeightIn = (fontSizePt * 1.1) / 72;
+      const totalBlockHeight = textLines.length * lineHeightIn;
+      
+      // Determine line growth direction based on rotation
+      // For -90 (normal) and 270 (rotated page + rotate text), lines grow right (X increases)
+      // For 90 (rotate text) and 90 (rotated page), lines grow left (X decreases)
+      const normalizedAngle = ((finalAngle % 360) + 360) % 360;
+      const growDirection = (normalizedAngle === 270 || normalizedAngle === -90) ? 1 : -1;
+
+      // To simulate 'vertical-rl', the first line must be the rightmost.
+      // If lines grow right (dir 1), Line 1 is the LAST line. 
+      // If lines grow left (dir -1), Line 1 is the FIRST line.
+      const renderingLines = (growDirection === 1) ? [...textLines].reverse() : [...textLines];
+
+      const startX = finalX - (totalBlockHeight / 2) + (lineHeightIn / 2);
+      
+      renderingLines.forEach((line, idx) => {
+        const lineX = startX + (idx * lineHeightIn);
+        doc.text(line, lineX, finalY, {
+          align: 'center',
+          baseline: 'middle',
+          angle: finalAngle
+        });
       });
     });
   });
