@@ -2,8 +2,9 @@
 const fileInput = document.getElementById('file-input');
 const folderInput = document.getElementById('folder-input');
 const tabTypeSelect = document.getElementById('tab-type');
-const paperSizeSelect = document.getElementById('paper-size');
 const printModeSelect = document.getElementById('print-mode');
+const collationModeSelect = document.getElementById('collation-mode');
+const collationGroup = document.getElementById('collation-group');
 const startPosInput = document.getElementById('start-pos');
 const numericModeControls = document.getElementById('numeric-mode-controls');
 const numStartInput = document.getElementById('num-start');
@@ -27,6 +28,8 @@ const summaryDetails = document.getElementById('summary-details');
 const printBtn = document.getElementById('print-btn');
 const pdfBtn = document.getElementById('pdf-btn');
 const printTarget = document.getElementById('print-target');
+const smartFixAllBtn = document.getElementById('smart-fix-all-btn');
+const toast = document.getElementById('toast');
 
 const optionsHeader = document.getElementById('options-header');
 const optionsContent = document.getElementById('options-content');
@@ -48,7 +51,11 @@ function init() {
   });
 
   tabTypeSelect.addEventListener('change', handleConfigChange);
-  printModeSelect.addEventListener('change', updatePreview);
+  printModeSelect.addEventListener('change', () => {
+    collationGroup.style.display = printModeSelect.value === 'single' ? 'flex' : 'none';
+    updatePreview();
+  });
+  collationModeSelect.addEventListener('change', updatePreview);
   startPosInput.addEventListener('change', updatePreview);
   offsetXInput.addEventListener('change', updatePreview);
   offsetYInput.addEventListener('change', updatePreview);
@@ -66,7 +73,8 @@ function init() {
 
   printBtn.addEventListener('click', () => doPrint(false));
   pdfBtn.addEventListener('click', doPdf);
-  document.getElementById('test-print-btn').addEventListener('click', () => doPrint(true));
+  smartFixAllBtn.addEventListener('click', doSmartFixAll);
+  document.getElementById('clean-digits-btn').addEventListener('click', doCleanDigitsAll);
 
 
   fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
@@ -146,29 +154,25 @@ function applyBatchFontSizes() {
   tabFontSizes = new Array(activeTabs.length);
   const is25Cut = tabTypeSelect.value === '25';
   
-  let hasLongText = false;
-  const lineEstimates = activeTabs.map(text => {
+  for (let i = 0; i < activeTabs.length; i++) {
+    const text = activeTabs[i];
     let lines = 1;
+    
     if (text.includes('\n')) {
       lines = text.split('\n').length;
     } else {
       if (text.length > 45) lines = 3;
       else if (text.length > 22) lines = 2;
     }
-    if (lines >= 3) hasLongText = true;
-    return lines;
-  });
 
-  for (let i = 0; i < activeTabs.length; i++) {
-    const lines = lineEstimates[i];
     if (is25Cut) {
       tabFontSizes[i] = 7;
-    } else if (hasLongText) {
-      // Long text batch rules
-      tabFontSizes[i] = (lines >= 3) ? 7.5 : 10;
+    } else if (lines >= 3) {
+      tabFontSizes[i] = 7.5;
+    } else if (lines === 2) {
+      tabFontSizes[i] = 10;
     } else {
-      // Short text batch rules
-      tabFontSizes[i] = (lines >= 2) ? 10 : 12;
+      tabFontSizes[i] = 12;
     }
   }
 }
@@ -215,9 +219,15 @@ async function handleFiles(files) {
         // Usually users drop a folder of folders. 
         // We'll try to get the top-level items in the drop.
         const parts = f.webkitRelativePath.split('/');
-        if (parts.length > 1) return parts[1]; // Subfolder name
+        if (parts.length > 1) {
+          name = parts[1]; // Subfolder name
+        }
       }
-      return name.replace(/\.[^/.]+$/, "").trim();
+      
+      // Remove known file extensions so we don't accidentally truncate folder names with dots
+      name = name.replace(/\.(pdf|doc|docx|txt|xls|xlsx|csv|rtf|jpg|png|jpeg)$/i, "").trim();
+
+      return name;
     });
 
     // Unique names
@@ -278,6 +288,148 @@ function processTabs() {
   updatePreview();
 }
 
+function showToast(message) {
+  toast.textContent = message;
+  toast.classList.add('show');
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2000);
+}
+
+const abbreviations = {
+  'defense': 'Def',
+  'defendant': 'Def',
+  'defendants': 'Defs',
+  'plaintiff': 'Pltf',
+  'plaintiffs': 'Pltfs',
+  'exhibit': 'Exh',
+  'exhibits': 'Exhs',
+  'document': 'Doc',
+  'documents': 'Docs',
+  'motion': 'Mot',
+  'opposition': 'Opp',
+  'declaration': 'Decl',
+  'affidavit': 'Aff',
+  'memorandum': 'Memo',
+  'response': 'Resp',
+  'application': 'App',
+  'agreement': 'Agmt',
+  'department': 'Dept',
+  'government': 'Govt',
+  'number': 'No.',
+  'objection': 'Obj',
+  'objections': 'Objs',
+  'information': 'Info',
+  'additions': 'Add',
+  'addition': 'Add',
+  'volume': 'Vol'
+};
+
+function applySmartFix(text) {
+  let cleaned = text;
+  
+  // Replace common long words with abbreviations
+  const words = cleaned.split(/(\s+)/);
+  cleaned = words.map(word => {
+    const lower = word.toLowerCase();
+    // Match word and potential trailing punctuation
+    const match = lower.match(/^([a-z]+)([.,:;]*)$/);
+    if (match && abbreviations[match[1]]) {
+      return abbreviations[match[1]] + match[2];
+    }
+    return word;
+  }).join('');
+
+  // Remove common filler words case-insensitively
+  cleaned = cleaned.replace(/\b(and|the|of|to|for|in|on|at|by|with)\b/gi, ' ').trim();
+  
+  // Replace multiple spaces with a single space
+  cleaned = cleaned.replace(/\s{2,}/g, ' ');
+  
+  return cleaned;
+}
+
+function balanceTextLines(text) {
+  const words = text.replace(/\n/g, ' ').split(/\s+/).filter(w => w.length > 0);
+  if (words.length <= 1) return text;
+  
+  const totalChars = words.join(' ').length;
+  
+  if (totalChars <= 22) {
+    return words.join(' ');
+  }
+  
+  if (totalChars <= 42 || words.length === 2) {
+    let bestSplit = 1;
+    let minDiff = Infinity;
+    for (let i = 1; i < words.length; i++) {
+      const line1 = words.slice(0, i).join(' ');
+      const line2 = words.slice(i).join(' ');
+      // 46% target for line 1 ensures line 2 is just a little bit longer
+      const targetL1 = totalChars * 0.46;
+      let diff = Math.abs(line1.length - targetL1);
+      
+      // Penalty to avoid creating a line so long it wraps naturally
+      if (line1.length > 24 || line2.length > 24) diff += 100;
+
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestSplit = i;
+      }
+    }
+    return words.slice(0, bestSplit).join(' ') + '\n' + words.slice(bestSplit).join(' ');
+  }
+  
+  // 3 lines
+  let bestSplit1 = 1;
+  let bestSplit2 = 2;
+  let minDiff = Infinity;
+  for (let i = 1; i < words.length - 1; i++) {
+    for (let j = i + 1; j < words.length; j++) {
+      const line1 = words.slice(0, i).join(' ');
+      const line2 = words.slice(i, j).join(' ');
+      const line3 = words.slice(j).join(' ');
+      
+      // Target 2nd line to be slightly longer, but not so long it wraps to a 4th line!
+      const targetL1 = totalChars * 0.32;
+      const targetL2 = totalChars * 0.36;
+      const targetL3 = totalChars * 0.32;
+      
+      let diff = Math.abs(line1.length - targetL1) + 
+                 Math.abs(line2.length - targetL2) + 
+                 Math.abs(line3.length - targetL3);
+                 
+      // Penalty to avoid creating a line so long it wraps naturally
+      if (line1.length > 30 || line2.length > 30 || line3.length > 30) diff += 100;
+                 
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestSplit1 = i;
+        bestSplit2 = j;
+      }
+    }
+  }
+  return words.slice(0, bestSplit1).join(' ') + '\n' + 
+         words.slice(bestSplit1, bestSplit2).join(' ') + '\n' + 
+         words.slice(bestSplit2).join(' ');
+}
+
+function doSmartFixAll() {
+  if (activeTabs.length === 0) return;
+  activeTabs = activeTabs.map(t => balanceTextLines(applySmartFix(t)));
+  applyBatchFontSizes();
+  updatePreview();
+  showToast("Smart Fix Applied to All!");
+}
+
+function doCleanDigitsAll() {
+  if (activeTabs.length === 0) return;
+  activeTabs = activeTabs.map(t => balanceTextLines(t.replace(/^\d+[\s_.-]*/, "").trim()));
+  applyBatchFontSizes();
+  updatePreview();
+  showToast("Leading Digits Cleaned!");
+}
+
 function updatePreview() {
   if (activeTabs.length === 0) {
     previewContainer.innerHTML = '<div class="empty-state">Drop files here, click to upload, or switch to Numeric Mode to start</div>';
@@ -316,6 +468,7 @@ function updatePreview() {
     <strong>First Item:</strong> ${activeTabs[0].replace(/\n/g, ' ')}<br>
     <strong>Start Position:</strong> ${startPos}<br>
     <strong>Mode:</strong> ${mode === 'single' ? 'Single Tab (1 tab per page)' : 'Full Page (Fill all)'}<br>
+    ${mode === 'single' ? `<strong>Collation:</strong> ${collationModeSelect.value === 'reverse' ? 'Reverse' : 'Straight'}<br>` : ''}
     <strong>Total:</strong> ${activeTabs.length} tab(s) &rarr; ${totalPages} page(s)
   `;
 
@@ -374,6 +527,20 @@ function updatePreview() {
     fontControl.appendChild(fontInput);
     fontControl.appendChild(btnDown);
 
+    // Smart Fix wand button for individual tabs
+    const btnSmartFix = document.createElement('button');
+    btnSmartFix.className = 'smart-fix-btn';
+    btnSmartFix.title = 'Smart Fix (shorten text)';
+    btnSmartFix.textContent = '🪄';
+    btnSmartFix.addEventListener('click', () => {
+      activeTabs[i] = balanceTextLines(applySmartFix(activeTabs[i]));
+      applyBatchFontSizes(); // Recalculate best font sizes
+      updatePreview();
+      showToast("Smart Fix Applied!");
+    });
+    
+    fontControl.insertBefore(btnSmartFix, btnUp); // Insert wand to the left of the font controls
+
     const textSpan = createEditableText(text, i, tabFontSizes[i]);
 
     function updateFontSize(val) {
@@ -430,10 +597,11 @@ function doPrint(isTest) {
     tabs: tabsToPrint,
     type: tabTypeSelect.value,
     mode: isTest ? 'single' : printModeSelect.value,
+    collation: collationModeSelect.value,
     startPos: parseInt(startPosInput.value) || 1,
     offsetX: parseFloat(offsetXInput.value) || 0,
     offsetY: parseFloat(offsetYInput.value) || 0,
-    paperSize: paperSizeSelect.value,
+    paperSize: '9x11',
     debug: debugOverlayToggle.checked,
     rotatePage: rotatePageToggle.checked,
     rotateText: rotateTextToggle.checked
@@ -456,7 +624,8 @@ function doPdf() {
   const startPos = parseInt(startPosInput.value) || 1;
   const offsetX = parseFloat(offsetXInput.value) || 0;
   const offsetY = parseFloat(offsetYInput.value) || 0;
-  const paperSize = paperSizeSelect.value;
+  const paperSize = '9x11';
+  const collation = collationModeSelect.value;
   const rotateText = rotateTextToggle.checked;
 
   const tabCount = parseInt(type);
@@ -486,6 +655,10 @@ function doPdf() {
         if (currentPos % tabCount === 0) currentPos = 0;
       }
     }
+  }
+  
+  if (mode === 'single' && collation === 'reverse') {
+    pages.reverse();
   }
 
   const { jsPDF } = window.jspdf;
@@ -535,7 +708,7 @@ function doPdf() {
 }
 
 function renderPrintJob(data) {
-  const { tabs, type, mode, startPos, offsetX, offsetY, debug, rotatePage, rotateText, paperSize } = data;
+  const { tabs, type, mode, collation, startPos, offsetX, offsetY, debug, rotatePage, rotateText, paperSize } = data;
   const tabCount = parseInt(type);
 
   printTarget.innerHTML = '';
@@ -576,6 +749,10 @@ function renderPrintJob(data) {
         if (currentPos % tabCount === 0) currentPos = 0;
       }
     }
+  }
+
+  if (mode === 'single' && collation === 'reverse') {
+    pages.reverse();
   }
 
   pages.forEach(pageTabs => {

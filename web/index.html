@@ -30,18 +30,18 @@
         </div>
 
         <div class="control-group">
-          <label>Paper Size</label>
-          <select id="paper-size">
-            <option value="9x11" selected>Tabbed (9x11)</option>
-            <option value="letter">Letter (8.5x11)</option>
-          </select>
-        </div>
-
-        <div class="control-group">
           <label>Print Mode</label>
           <select id="print-mode">
             <option value="single" selected>Single Tab (1 tab per page)</option>
             <option value="full">Full Page (Fill all positions)</option>
+          </select>
+        </div>
+
+        <div class="control-group" id="collation-group">
+          <label>Collation (Single Tab)</label>
+          <select id="collation-mode">
+            <option value="straight" selected>Straight Collated</option>
+            <option value="reverse">Reverse Collated</option>
           </select>
         </div>
 
@@ -66,7 +66,14 @@
         <div class="control-group">
           <label>Printer Settings</label>
           <span class="helper-text">* In web mode, use system print dialog to select tray/printer</span>
-          <button id="test-print-btn" class="btn btn-secondary btn-sm" style="margin-top: 6px;">📄 Test Print (1 Page)</button>
+          <div class="row" style="margin-top: 6px; gap: 8px;">
+            <button id="smart-fix-all-btn" class="btn btn-secondary btn-sm" style="flex: 1;">🪄 Smart Fix</button>
+            <button id="clean-digits-btn" class="btn btn-secondary btn-sm" style="flex: 1;">🔢 Clean Digits</button>
+          </div>
+          <label class="toggle-row" style="margin-top: 8px;">
+            <input type="checkbox" id="sort-az" checked>
+            <span>Sort A-Z</span>
+          </label>
         </div>
 
         <!-- Advanced Options -->
@@ -95,11 +102,6 @@
               <input type="number" id="copies" value="1" min="1">
               <span class="helper-text">* Set copies in print dialog</span>
             </div>
-
-            <label class="toggle-row">
-              <input type="checkbox" id="sort-az" checked>
-              <span>Sort A-Z</span>
-            </label>
 
             <label class="toggle-row">
               <input type="checkbox" id="rotate-page">
@@ -163,6 +165,9 @@
       
     </div>
   </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast">Smart Fix Applied!</div>
 
   <!-- Print Target (Hidden from UI, visible only in @media print) -->
   <div id="print-target"></div>
